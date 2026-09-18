@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	listenAddr := flag.String("listen", ":9835", "Address to listen on for Prometheus metrics")
+	listenAddr := flag.String("listen", "127.0.0.1:9835", "Address to listen on for Prometheus metrics")
 	flag.Parse()
 
 	// Resolve hostname for global "host" label

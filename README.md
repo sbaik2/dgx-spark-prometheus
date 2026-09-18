@@ -74,18 +74,69 @@ tladmin@spark2:~ sudo systemctl enable --now dgx-spark-prometheus
 tladmin@spark2:~ sudo systemctl start dgx-spark-prometheus
 ```
 
+## Listen address
+
+The binary and bundled systemd service default to `127.0.0.1:9835`.
+Metrics are available at `http://127.0.0.1:9835/metrics` from the same host.
+An nginx instance on that host can proxy this endpoint.
+
+To allow direct access from other machines, listen on all IPv4 interfaces:
+
+```bash
+dgx-spark-prometheus -listen 0.0.0.0:9835
+```
+
+For the systemd service, run `sudo systemctl edit dgx-spark-prometheus`
+and add:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/dgx-spark-prometheus -listen 0.0.0.0:9835
+```
+
+Then apply the change:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart dgx-spark-prometheus
+```
+
+The exporter does not provide authentication or TLS. When enabling remote
+access, restrict port 9835 to trusted scrapers using your firewall.
+
+## Service permissions and GPU timeout
+
+The bundled service currently runs as root for compatibility. The collectors
+do not perform privileged configuration changes: they read system statistics
+and run a read-only `nvidia-smi` query. Root is not inherently required, but
+access to GPU devices and sysfs metrics depends on the host's permissions.
+A dedicated service account can be used after verifying those reads and the
+GPU query work under that account; grant only the device access it needs.
+
+Each `nvidia-smi` query has a five-second timeout. On timeout, the exporter
+kills the command, logs the failure, and omits GPU metrics for that scrape.
+Waiting for inherited output pipes is bounded by an additional one second.
+Other collectors continue to report their metrics.
+
 ## Prometheus configuration
+
+For Prometheus running on the same host (and in the same network namespace):
 
 ```
 scrape_configs:
   - job_name: 'dgx_spark'
-    scrape_interval: 5s
+    scrape_interval: 15s
+    scrape_timeout: 10s
     static_configs:
-      - targets: ['spark1:9835', 'spark2:9835', ...]
+      - targets: ['127.0.0.1:9835']
     metrics_path: /metrics
     scheme: http
 ```
 
+Use `scrape_interval: 30s` for less frequent collection. For remote scraping,
+enable a reachable listen address as described above and replace the target
+with the Spark's hostname or IP, for example `spark1:9835`.
 
 ## Data Sources
 

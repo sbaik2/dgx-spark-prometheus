@@ -1,13 +1,17 @@
 package collectors
 
 import (
+	"context"
 	"log"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+const nvidiaSmiTimeout = 5 * time.Second
 
 // GPUCollector collects GPU metrics via nvidia-smi.
 type GPUCollector struct {
@@ -52,14 +56,24 @@ func (c *GPUCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 // Collect runs nvidia-smi and sends GPU metrics to the channel.
-// If nvidia-smi is not available or fails, no metrics are emitted.
+// If nvidia-smi is not available, fails, or times out, no GPU metrics are emitted.
 func (c *GPUCollector) Collect(ch chan<- prometheus.Metric) {
-	out, err := exec.Command(
+	ctx, cancel := context.WithTimeout(context.Background(), nvidiaSmiTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx,
 		"nvidia-smi",
 		"--query-gpu=utilization.gpu,temperature.gpu,power.draw,clocks.current.graphics",
 		"--format=csv,noheader,nounits",
-	).Output()
+	)
+	// Bound waiting for output pipes if a subprocess keeps them open after exit.
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Printf("nvidia-smi timed out after %s", nvidiaSmiTimeout)
+			return
+		}
 		log.Printf("nvidia-smi failed: %v", err)
 		return
 	}

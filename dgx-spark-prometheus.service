@@ -6,11 +6,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/dgx-spark-prometheus -listen :9835
+ExecStart=/usr/local/bin/dgx-spark-prometheus -listen 127.0.0.1:9835
 Restart=on-failure
 RestartSec=5
 
-# Run as root to access nvidia-smi, /proc, and /sys thermal zones
+# Existing deployment default; root is not inherently required by the collectors.
+# A dedicated account can be used if it can read the metrics and access the GPU.
 User=root
 Group=root
 
